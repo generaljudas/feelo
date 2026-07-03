@@ -68,13 +68,16 @@ SPRITE_PALETTE = [
     (247, 178, 106),  # 15 amber
 ]
 
-# --- background palette ---
-B_TOP = 1         # sky top (darkest)
+# --- background palettes: one per time-of-day theme ---
+# All three themes share the same semantic slots, so the sky/hill/frame
+# drawing code is theme-agnostic. Day/dusk skies are kept deep enough that
+# the white UI font stays readable over them.
+B_TOP = 1         # sky top
 B_MID = 2         # sky middle
-B_LOW = 3         # sky near horizon (lightest)
-B_DOT = 4         # dim star speck
-B_STAR = 5        # star
-B_BRIGHT = 6      # bright star / frame highlight
+B_LOW = 3         # sky near horizon
+B_DOT = 4         # dim star speck / cloud shadow
+B_STAR = 5        # star / cloud base
+B_BRIGHT = 6      # bright star / cloud light / chevrons
 B_WARM = 7        # rare warm twinkle
 B_HILL = 8        # hill silhouette
 B_HILLRIM = 9     # hill rim light
@@ -82,10 +85,10 @@ B_FRAME = 10      # pad frame main
 B_FRAMEGLOW = 11  # pad frame outer glow
 B_AXIS = 12       # pad axis dots
 B_MARK = 13       # pad center marker / corner accents
-B_MOON = 14       # moon
-B_MOONSH = 15     # moon shade
+B_MOON = 14       # moon / sun core
+B_MOONSH = 15     # moon shade / sun rim
 
-BG_PALETTE = [
+NIGHT_PALETTE = [
     (255, 0, 255),    # 0 transparent
     (26, 20, 42),     # 1 sky top
     (36, 27, 51),     # 2 sky mid
@@ -103,6 +106,51 @@ BG_PALETTE = [
     (242, 230, 201),  # 14 moon
     (217, 201, 168),  # 15 moon shade
 ]
+
+DAY_PALETTE = [
+    (255, 0, 255),    # 0 transparent
+    (43, 99, 153),    # 1 sky top
+    (56, 115, 173),   # 2 sky mid
+    (70, 133, 194),   # 3 sky low
+    (100, 155, 208),  # 4 cloud shadow
+    (127, 181, 224),  # 5 cloud base
+    (172, 210, 238),  # 6 cloud light
+    (255, 217, 138),  # 7 warm sparkle
+    (32, 94, 72),     # 8 hill (green by day)
+    (85, 181, 133),   # 9 hill rim
+    (223, 230, 250),  # 10 frame
+    (110, 135, 192),  # 11 frame glow
+    (95, 127, 186),   # 12 axis dots
+    (238, 242, 255),  # 13 marker
+    (255, 233, 168),  # 14 sun core
+    (247, 178, 106),  # 15 sun rim
+]
+
+DUSK_PALETTE = [
+    (255, 0, 255),    # 0 transparent
+    (58, 42, 92),     # 1 sky top (violet)
+    (122, 68, 96),    # 2 sky mid (mauve)
+    (176, 96, 72),    # 3 sky low (burnt orange)
+    (138, 85, 112),   # 4 faint star
+    (201, 144, 154),  # 5 star
+    (232, 201, 160),  # 6 bright
+    (255, 217, 138),  # 7 warm twinkle
+    (34, 24, 56),     # 8 hill
+    (107, 74, 99),    # 9 hill rim
+    (224, 201, 216),  # 10 frame
+    (138, 95, 127),   # 11 frame glow
+    (160, 111, 136),  # 12 axis dots
+    (255, 233, 208),  # 13 marker
+    (255, 207, 138),  # 14 low sun core
+    (232, 138, 90),   # 15 low sun rim
+]
+
+# stars/clouds counts; celestial: what hangs in the sky
+THEMES = {
+    'day':   dict(palette=DAY_PALETTE, stars=0, clouds=3, celestial='sun'),
+    'dusk':  dict(palette=DUSK_PALETTE, stars=90, clouds=1, celestial='lowsun'),
+    'night': dict(palette=NIGHT_PALETTE, stars=250, clouds=0, celestial='moon'),
+}
 
 
 def new_canvas(w, h, palette, fill=T):
@@ -412,22 +460,9 @@ def lcg_stream(seed):
         yield seed
 
 
-def sky(d, rng):
+def sky(d):
     # three bands, checker-dithered over 10-row transitions
     band_mid_start, band_low_start = 110, 170
-
-    def band_color(y, x):
-        for start, a, b in ((band_low_start, B_MID, B_LOW), (band_mid_start, B_TOP, B_MID)):
-            if y >= start + 10:
-                continue
-            if y >= start:
-                return b if (x + y) % 2 == 0 and (y - start) > 5 - next(rng) % 3 else \
-                    (a if (x + y) % 2 else (b if (y - start) > 4 else a))
-        if y >= band_low_start:
-            return B_LOW
-        if y >= band_mid_start:
-            return B_MID
-        return B_TOP
 
     for y in range(256):
         if y < band_mid_start:
@@ -472,6 +507,37 @@ def moon(d, cx=196, cy=78, r=11):
     d.arc((cx - r, cy - r, cx + r, cy + r), 60, 250, fill=B_MOONSH)
 
 
+def sun(d, cx=196, cy=78, r=11):
+    for ang_deg in range(0, 360, 45):
+        ang = math.radians(ang_deg)
+        x0 = cx + (r + 3) * math.cos(ang)
+        y0 = cy + (r + 3) * math.sin(ang)
+        x1 = cx + (r + 6) * math.cos(ang)
+        y1 = cy + (r + 6) * math.sin(ang)
+        d.line((round(x0), round(y0), round(x1), round(y1)), fill=B_MOONSH)
+    d.ellipse((cx - r, cy - r, cx + r, cy + r), fill=B_MOON, outline=B_MOONSH)
+    d.ellipse((cx - r + 3, cy - r + 3, cx - r + 8, cy - r + 7), fill=B_MARK)
+
+
+def low_sun(d, cx=196, cy=186, r=13):
+    # sits low; the hills drawn afterwards clip its lower half
+    d.ellipse((cx - r, cy - r, cx + r, cy + r), fill=B_MOON, outline=B_MOONSH)
+    for gy, half in ((cy - 2, 20), (cy + 3, 26)):
+        d.line((cx - half - r, gy, cx - r - 2, gy), fill=B_MOONSH)
+        d.line((cx + r + 2, gy, cx + half + r, gy), fill=B_MOONSH)
+
+
+def clouds(d, count):
+    spots = ((66, 86), (168, 108), (118, 62))
+    for cx, cy in spots[:count]:
+        # base puffs
+        for dx, dy, rw, rh in ((0, 0, 14, 6), (-10, 2, 9, 4), (10, 2, 10, 4)):
+            d.ellipse((cx + dx - rw, cy + dy - rh, cx + dx + rw, cy + dy + rh), fill=B_STAR)
+        # lit top and shaded base
+        d.ellipse((cx - 9, cy - 6, cx + 7, cy), fill=B_BRIGHT)
+        d.line((cx - 12, cy + 6, cx + 12, cy + 6), fill=B_DOT)
+
+
 def hills(d, rng):
     for x in range(256):
         y1 = 206 - round(7 * math.sin((x + 30) * math.pi / 128))
@@ -483,25 +549,43 @@ def hills(d, rng):
             d.point((x, top + 2 + next(rng) % 3), fill=B_HILLRIM)
 
 
-def gen_bg_soft():
-    img = new_canvas(256, 256, BG_PALETTE, B_TOP)
+def draw_celestial(d, kind):
+    if kind == 'moon':
+        moon(d)
+    elif kind == 'sun':
+        sun(d)
+    else:
+        low_sun(d)
+
+
+def gen_bg_home(theme_name):
+    theme = THEMES[theme_name]
+    img = new_canvas(256, 256, theme['palette'], B_TOP)
     d = ImageDraw.Draw(img)
     rng = lcg_stream(0x1234ABCD)
-    sky(d, rng)
-    stars(d, rng, count=250, y_max=200)
-    moon(d)
+    sky(d)
+    if theme['stars']:
+        stars(d, rng, count=theme['stars'], y_max=200)
+    if theme['clouds']:
+        clouds(d, theme['clouds'])
+    draw_celestial(d, theme['celestial'])
     hills(d, rng)
-    save_bmp(img, 'bg_soft')
-    write_json('bg_soft', '{\n    "type": "regular_bg"\n}')
+    name = 'bg_home_' + theme_name
+    save_bmp(img, name)
+    write_json(name, '{\n    "type": "regular_bg"\n}')
     return img
 
 
-def gen_bg_pad():
-    img = new_canvas(256, 256, BG_PALETTE, B_TOP)
+def gen_bg_pad(theme_name):
+    theme = THEMES[theme_name]
+    img = new_canvas(256, 256, theme['palette'], B_TOP)
     d = ImageDraw.Draw(img)
     rng = lcg_stream(0xBADC0FFE)
-    sky(d, rng)
-    stars(d, rng, count=230, y_max=250)
+    sky(d)
+    if theme['stars']:
+        stars(d, rng, count=min(theme['stars'], 230), y_max=250)
+    if theme['clouds']:
+        clouds(d, 1)
 
     # pad frame: 136 half-width play area centered at (128,128)
     x0, y0, x1, y1 = 128 - 68, 128 - 68, 128 + 68, 128 + 68
@@ -529,8 +613,9 @@ def gen_bg_pad():
                            (x0 - 6, 128, -1, 0), (x1 + 6, 128, 1, 0)):
         d.line((ex - 2 * abs(dy), ey - 2 * abs(dx), ex + dx * 2, ey + dy * 2), fill=B_BRIGHT)
         d.line((ex + 2 * abs(dy), ey + 2 * abs(dx), ex + dx * 2, ey + dy * 2), fill=B_BRIGHT)
-    save_bmp(img, 'bg_pad')
-    write_json('bg_pad', '{\n    "type": "regular_bg"\n}')
+    name = 'bg_pad_' + theme_name
+    save_bmp(img, name)
+    write_json(name, '{\n    "type": "regular_bg"\n}')
     return img
 
 
@@ -590,16 +675,19 @@ def main():
     small = gen_mascot(1, 'mascot')
     big = gen_mascot(2, 'mascot_big')
     sheets = [big, small, gen_cursor(), gen_focus_icons(), gen_dot()]
-    bgs = [gen_bg_soft(), gen_bg_pad()]
+    bgs = []
+    for theme_name in ('day', 'dusk', 'night'):
+        bgs.append(gen_bg_home(theme_name))
+        bgs.append(gen_bg_pad(theme_name))
     gen_audio()
     preview(sheets, os.path.join(PREVIEW_DIR, 'asset_preview.png'), scale=4)
 
-    # bg preview: the visible 240x160 screen area of each bg
+    # bg preview: the visible 240x160 screen area of each bg (2 per theme row)
     scale = 2
-    canvas = Image.new('RGB', ((240 + 8) * 2 + 8, 160 + 16), (0, 0, 0))
+    canvas = Image.new('RGB', ((240 + 8) * 2 + 8, (160 + 8) * 3 + 8), (0, 0, 0))
     for i, bg in enumerate(bgs):
         crop = bg.convert('RGB').crop((8, 48, 248, 208))
-        canvas.paste(crop, (8 + i * 248, 8))
+        canvas.paste(crop, (8 + (i % 2) * 248, 8 + (i // 2) * 168))
     canvas = canvas.resize((canvas.width * scale, canvas.height * scale), Image.NEAREST)
     canvas.save(os.path.join(PREVIEW_DIR, 'bg_preview.png'))
     print('done')

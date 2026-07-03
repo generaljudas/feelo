@@ -8,9 +8,9 @@
 #include "bn_sprite_tiles_ptr.h"
 #include "bn_vector.h"
 
-#include "bn_regular_bg_items_bg_soft.h"
 #include "bn_sprite_items_mascot_big.h"
 
+#include "fl_bg.h"
 #include "fl_insights.h"
 #include "fl_rtc.h"
 #include "fl_storage.h"
@@ -32,7 +32,7 @@ scene_id scene_confirm(context& ctx)
 
     storage::append(ctx.pending);
 
-    bn::regular_bg_ptr bg = bn::regular_bg_items::bg_soft.create_bg(0, 0);
+    bn::regular_bg_ptr backdrop = bg::create_soft();
     bn::sprite_ptr mascot = bn::sprite_items::mascot_big.create_sprite(0, -14, 9);
 
     bn::vector<bn::sprite_ptr, 16> title_sprites;

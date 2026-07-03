@@ -13,9 +13,10 @@
 #include "bn_sprite_tiles_ptr.h"
 #include "bn_vector.h"
 
-#include "bn_regular_bg_items_bg_pad.h"
 #include "bn_sprite_items_cursor.h"
 #include "bn_sprite_items_mascot.h"
+
+#include "fl_bg.h"
 
 namespace fl
 {
@@ -34,7 +35,7 @@ namespace
 
 scene_id scene_pad(context& ctx)
 {
-    bn::regular_bg_ptr bg = bn::regular_bg_items::bg_pad.create_bg(0, 0);
+    bn::regular_bg_ptr backdrop = bg::create_pad();
 
     // Start from the previous position for quick "same as before" check-ins.
     bn::fixed x = bn::fixed(ctx.pending.valence) * pad_half / 100;
