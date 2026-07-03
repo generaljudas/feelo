@@ -1,0 +1,10 @@
+build/
+*.gba
+*.elf
+*.map
+*.sav
+*.ss[0-9]
+bn_ofiles.txt
+.venv/
+__pycache__/
+.DS_Store
