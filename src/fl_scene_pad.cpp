@@ -43,6 +43,23 @@ scene_id scene_pad(context& ctx)
     bn::sprite_ptr cursor = bn::sprite_items::cursor.create_sprite(x, y);
     bn::sprite_ptr mascot = bn::sprite_items::mascot.create_sprite(x, y - 26);
 
+    // Pre-create every tile set used here: swapping between existing tile
+    // handles is free, while per-frame create_tiles() churns the sprite
+    // tiles item pool until it runs out.
+    bn::vector<bn::sprite_tiles_ptr, 2> cursor_tiles;
+
+    for(int i = 0; i < 2; ++i)
+    {
+        cursor_tiles.push_back(bn::sprite_items::cursor.tiles_item().create_tiles(i));
+    }
+
+    bn::vector<bn::sprite_tiles_ptr, 9> zone_tiles;
+
+    for(int i = 0; i < 9; ++i)
+    {
+        zone_tiles.push_back(bn::sprite_items::mascot.tiles_item().create_tiles(i));
+    }
+
     bn::vector<bn::sprite_ptr, 16> label_sprites;
     bn::vector<bn::sprite_ptr, 24> hint_sprites;
     ctx.small_text->set_center_alignment();
@@ -93,21 +110,23 @@ scene_id scene_pad(context& ctx)
 
         // Pulse the cursor ring.
         ++pulse;
-        cursor.set_tiles(bn::sprite_items::cursor.tiles_item().create_tiles((pulse >> 4) & 1));
+        cursor.set_tiles(cursor_tiles[(pulse >> 4) & 1]);
 
         int zone = mood_zone(valence, energy);
 
         if(zone != last_zone)
         {
             last_zone = zone;
-            mascot.set_tiles(bn::sprite_items::mascot.tiles_item().create_tiles(zone));
+            mascot.set_tiles(zone_tiles[zone]);
 
             label_sprites.clear();
             ctx.big_text->set_center_alignment();
             ctx.big_text->generate(0, -58, mood_words[zone], label_sprites);
         }
 
-        if(valence != last_valence || energy != last_energy)
+        // Throttle the numeric readout: regenerating text sprites every
+        // frame while a direction is held floods the tile item pool.
+        if((valence != last_valence || energy != last_energy) && (pulse & 7) == 0)
         {
             last_valence = valence;
             last_energy = energy;

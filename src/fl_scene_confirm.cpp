@@ -67,11 +67,14 @@ scene_id scene_confirm(context& ctx)
 
     bn::sound_items::sfx_tada.play(bn::fixed(0.7));
 
+    bn::sprite_tiles_ptr yay_tiles[2] = {bn::sprite_items::mascot.tiles_item().create_tiles(9),
+                                         bn::sprite_items::mascot.tiles_item().create_tiles(10)};
+
     for(int frame = 0; frame < 180; ++frame)
     {
         // Celebration bounce between the two YAY frames.
         bool up = (frame >> 4) & 1;
-        mascot.set_tiles(bn::sprite_items::mascot.tiles_item().create_tiles(up ? 9 : 10));
+        mascot.set_tiles(yay_tiles[up ? 0 : 1]);
         mascot.set_y(up ? -16 : -12);
 
         if(bn::keypad::a_pressed() || bn::keypad::b_pressed() || bn::keypad::start_pressed())

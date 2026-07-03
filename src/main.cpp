@@ -15,9 +15,20 @@
 #include "fl_scenes.h"
 #include "fl_storage.h"
 
+#ifdef FL_AUTOPILOT
+    #include "fl_autopilot_commands.h"
+#endif
+
 int main()
 {
+#ifdef FL_AUTOPILOT
+    // Smoke-test build: replays a scripted input session (see
+    // tools/gen_autopilot.py) instead of reading the keypad.
+    bn::core::init(fl::autopilot_commands);
+#else
     bn::core::init();
+#endif
+
     fl::storage::init();
 
     BN_LOG("feelo: boot ok, records=", fl::storage::count(),
@@ -36,6 +47,11 @@ int main()
     while(true)
     {
         bn::bg_palettes::set_fade_intensity(0);
+
+        // Consume the key edge that triggered the previous scene change:
+        // scenes read the keypad before their first update, so without this
+        // a single A press would cascade through several scenes at once.
+        bn::core::update();
 
         switch(scene)
         {

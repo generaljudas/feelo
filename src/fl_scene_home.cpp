@@ -55,20 +55,28 @@ scene_id scene_home(context& ctx)
     ctx.small_text->generate(0, 62, "A: CHECK IN    SELECT: STATS", info_sprites);
 
     bn::vector<bn::sprite_ptr, 12> clock_sprites;
+    bn::string<20> last_clock("\n");   // never matches a real clock string
     int frames_to_clock_refresh = 0;
 
     while(true)
     {
         if(! frames_to_clock_refresh)
         {
-            frames_to_clock_refresh = 60;
-            clock_sprites.clear();
+            frames_to_clock_refresh = 30;
 
+            // Only regenerate the text sprites when the clock actually
+            // changed (once a minute) to avoid churning tile items.
             bn::string<20> clock = rtc::clock_text();
 
-            if(! clock.empty())
+            if(clock != last_clock)
             {
-                ctx.small_text->generate(0, -50, clock, clock_sprites);
+                last_clock = clock;
+                clock_sprites.clear();
+
+                if(! clock.empty())
+                {
+                    ctx.small_text->generate(0, -50, clock, clock_sprites);
+                }
             }
         }
 
