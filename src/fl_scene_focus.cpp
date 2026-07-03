@@ -7,15 +7,16 @@
 #include "bn_sprite_ptr.h"
 #include "bn_vector.h"
 
-#include "bn_regular_bg_items_bg_soft.h"
 #include "bn_sprite_items_focus_icons.h"
+
+#include "fl_bg.h"
 
 namespace fl
 {
 
 scene_id scene_focus(context& ctx)
 {
-    bn::regular_bg_ptr bg = bn::regular_bg_items::bg_soft.create_bg(0, 0);
+    bn::regular_bg_ptr backdrop = bg::create_soft();
 
     bn::vector<bn::sprite_ptr, 24> title_sprites;
     ctx.big_text->set_center_alignment();

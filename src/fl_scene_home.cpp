@@ -7,9 +7,9 @@
 #include "bn_string.h"
 #include "bn_vector.h"
 
-#include "bn_regular_bg_items_bg_soft.h"
-#include "bn_sprite_items_mascot.h"
+#include "bn_sprite_items_mascot_big.h"
 
+#include "fl_bg.h"
 #include "fl_insights.h"
 #include "fl_rtc.h"
 #include "fl_storage.h"
@@ -19,13 +19,13 @@ namespace fl
 
 scene_id scene_home(context& ctx)
 {
-    bn::regular_bg_ptr bg = bn::regular_bg_items::bg_soft.create_bg(0, 0);
+    bn::regular_bg_ptr backdrop = bg::create_soft();
+    bg::phase backdrop_phase = bg::current_phase();
 
     // Mascot mirrors the recent average mood (neutral on a fresh log).
     insights::summary week = insights::window_summary(7);
     int frame = week.n ? mood_zone(week.avg_valence, week.avg_energy) : 4;
-    bn::sprite_ptr mascot = bn::sprite_items::mascot.create_sprite(0, -14, frame);
-    mascot.set_scale(2);
+    bn::sprite_ptr mascot = bn::sprite_items::mascot_big.create_sprite(0, -14, frame);
 
     bn::vector<bn::sprite_ptr, 24> title_sprites;
     ctx.big_text->set_center_alignment();
@@ -57,12 +57,25 @@ scene_id scene_home(context& ctx)
     bn::vector<bn::sprite_ptr, 12> clock_sprites;
     bn::string<20> last_clock("\n");   // never matches a real clock string
     int frames_to_clock_refresh = 0;
+    int bob = 0;
 
     while(true)
     {
+        // Gentle idle bob so the mascot feels alive.
+        ++bob;
+        mascot.set_y((bob & 64) ? -13 : -14);
+
         if(! frames_to_clock_refresh)
         {
             frames_to_clock_refresh = 30;
+
+            // Follow the sun: swap the backdrop when the time of day
+            // crosses a day/dusk/night boundary while idling here.
+            if(bg::phase new_phase = bg::current_phase(); new_phase != backdrop_phase)
+            {
+                backdrop_phase = new_phase;
+                backdrop = bg::create_soft();
+            }
 
             // Only regenerate the text sprites when the clock actually
             // changed (once a minute) to avoid churning tile items.

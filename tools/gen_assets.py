@@ -6,8 +6,12 @@ Butano's importer requires: uncompressed BMP, 40-byte BITMAPINFOHEADER,
 (so the image is treated as a 16-color / 4bpp asset).
 Pillow's P-mode BMP writer satisfies this; we assert it after writing.
 
+The mascot is drawn scale-parametrically: the same code renders the 32x32
+sheet (mood pad) and the 64x64 sheet (home / celebrate screens), with extra
+detail — eye shine, ear interiors, deeper shading — at the high resolution.
+
 Run from the repo root:  .venv/bin/python tools/gen_assets.py
-Also writes an upscaled preview sheet to build/asset_preview.png.
+Preview sheets land in build/asset_preview.png and build/bg_preview.png.
 """
 
 import math
@@ -23,49 +27,136 @@ AUDIO = os.path.join(ROOT, 'audio')
 PREVIEW_DIR = os.path.join(ROOT, 'build')
 
 # ----------------------------------------------------------------------------
-# Palette (16 unique RGB entries; index 0 is the transparent color)
+# Palettes (16 unique RGB entries each; index 0 is the transparent color).
+# Sprites and backgrounds are separate BMPs, so they get separate palettes.
 # ----------------------------------------------------------------------------
-T = 0            # transparent (magenta, never drawn)
-OUT = 1          # outline: deep plum
-BODY = 2         # mascot body: mint
-SHADE = 3        # body shade
-LIGHT = 4        # body highlight
-WHITE = 5        # eye whites / shine
-PUPIL = 6        # pupils / dark face lines
-MOUTH = 7        # mouth interior
-BLUSH = 8        # blush pink
-TEAR = 9         # tear / sweat blue
-SPARK = 10       # sparkle yellow
-LAV = 11         # lavender (zzz, pad frame)
-BASE = 12        # background base plum
-DOT = 13         # background dim dots
-STAR = 14        # background stars
-ACCENT = 15      # background bright accents
+T = 0             # transparent (magenta, never drawn)
 
-PALETTE = [
+# --- sprite palette ---
+OUT = 1           # outline: deep plum
+BODY = 2          # mascot body: mint
+SHADE = 3         # body shade
+DEEP = 4          # body deep shade (bottom rim)
+LIGHT = 5         # body highlight
+WHITE = 6         # eye whites / shine / teeth
+PUPIL = 7         # pupils / dark face lines
+MOUTH = 8         # mouth interior
+TONGUE = 9        # tongue / mouth accent
+BLUSH = 10        # blush pink
+TEAR = 11         # tear / sweat blue
+SPARK = 12        # sparkle yellow
+LAV = 13          # lavender (zzz, lost spiral)
+EARIN = 14        # ear interior
+AMBER = 15        # warm accent (focus icons)
+
+SPRITE_PALETTE = [
     (255, 0, 255),    # 0 transparent
-    (43, 32, 54),     # 1 outline
+    (38, 30, 56),     # 1 outline
     (124, 224, 195),  # 2 body mint
-    (79, 179, 154),   # 3 shade
-    (178, 242, 222),  # 4 highlight
-    (255, 255, 255),  # 5 white
-    (32, 24, 48),     # 6 pupil
-    (180, 80, 106),   # 7 mouth
-    (247, 154, 192),  # 8 blush
-    (124, 196, 247),  # 9 tear/sweat
-    (255, 217, 138),  # 10 sparkle
-    (201, 184, 232),  # 11 lavender
-    (36, 27, 51),     # 12 bg base
-    (58, 45, 82),     # 13 bg dots
-    (85, 68, 122),    # 14 bg stars
-    (143, 127, 192),  # 15 bg accent
+    (86, 186, 158),   # 3 shade
+    (58, 143, 124),   # 4 deep shade
+    (182, 244, 222),  # 5 highlight
+    (255, 255, 255),  # 6 white
+    (32, 24, 48),     # 7 pupil
+    (146, 62, 92),    # 8 mouth
+    (231, 123, 157),  # 9 tongue
+    (247, 154, 192),  # 10 blush
+    (124, 196, 247),  # 11 tear/sweat
+    (255, 217, 138),  # 12 sparkle
+    (201, 184, 232),  # 13 lavender
+    (100, 205, 172),  # 14 ear interior
+    (247, 178, 106),  # 15 amber
 ]
 
+# --- background palettes: one per time-of-day theme ---
+# All three themes share the same semantic slots, so the sky/hill/frame
+# drawing code is theme-agnostic. Day/dusk skies are kept deep enough that
+# the white UI font stays readable over them.
+B_TOP = 1         # sky top
+B_MID = 2         # sky middle
+B_LOW = 3         # sky near horizon
+B_DOT = 4         # dim star speck / cloud shadow
+B_STAR = 5        # star / cloud base
+B_BRIGHT = 6      # bright star / cloud light / chevrons
+B_WARM = 7        # rare warm twinkle
+B_HILL = 8        # hill silhouette
+B_HILLRIM = 9     # hill rim light
+B_FRAME = 10      # pad frame main
+B_FRAMEGLOW = 11  # pad frame outer glow
+B_AXIS = 12       # pad axis dots
+B_MARK = 13       # pad center marker / corner accents
+B_MOON = 14       # moon / sun core
+B_MOONSH = 15     # moon shade / sun rim
 
-def new_canvas(w, h, fill=T):
+NIGHT_PALETTE = [
+    (255, 0, 255),    # 0 transparent
+    (26, 20, 42),     # 1 sky top
+    (36, 27, 51),     # 2 sky mid
+    (46, 36, 66),     # 3 sky low
+    (58, 45, 82),     # 4 dot
+    (85, 68, 122),    # 5 star
+    (143, 127, 192),  # 6 bright
+    (255, 217, 138),  # 7 warm twinkle
+    (20, 15, 33),     # 8 hill
+    (66, 52, 96),     # 9 hill rim
+    (150, 134, 199),  # 10 frame
+    (79, 63, 118),    # 11 frame glow
+    (94, 75, 143),    # 12 axis dots
+    (201, 184, 232),  # 13 marker
+    (242, 230, 201),  # 14 moon
+    (217, 201, 168),  # 15 moon shade
+]
+
+DAY_PALETTE = [
+    (255, 0, 255),    # 0 transparent
+    (43, 99, 153),    # 1 sky top
+    (56, 115, 173),   # 2 sky mid
+    (70, 133, 194),   # 3 sky low
+    (100, 155, 208),  # 4 cloud shadow
+    (127, 181, 224),  # 5 cloud base
+    (172, 210, 238),  # 6 cloud light
+    (255, 217, 138),  # 7 warm sparkle
+    (32, 94, 72),     # 8 hill (green by day)
+    (85, 181, 133),   # 9 hill rim
+    (223, 230, 250),  # 10 frame
+    (110, 135, 192),  # 11 frame glow
+    (95, 127, 186),   # 12 axis dots
+    (238, 242, 255),  # 13 marker
+    (255, 233, 168),  # 14 sun core
+    (247, 178, 106),  # 15 sun rim
+]
+
+DUSK_PALETTE = [
+    (255, 0, 255),    # 0 transparent
+    (58, 42, 92),     # 1 sky top (violet)
+    (122, 68, 96),    # 2 sky mid (mauve)
+    (176, 96, 72),    # 3 sky low (burnt orange)
+    (138, 85, 112),   # 4 faint star
+    (201, 144, 154),  # 5 star
+    (232, 201, 160),  # 6 bright
+    (255, 217, 138),  # 7 warm twinkle
+    (34, 24, 56),     # 8 hill
+    (107, 74, 99),    # 9 hill rim
+    (224, 201, 216),  # 10 frame
+    (138, 95, 127),   # 11 frame glow
+    (160, 111, 136),  # 12 axis dots
+    (255, 233, 208),  # 13 marker
+    (255, 207, 138),  # 14 low sun core
+    (232, 138, 90),   # 15 low sun rim
+]
+
+# stars/clouds counts; celestial: what hangs in the sky
+THEMES = {
+    'day':   dict(palette=DAY_PALETTE, stars=0, clouds=3, celestial='sun'),
+    'dusk':  dict(palette=DUSK_PALETTE, stars=90, clouds=1, celestial='lowsun'),
+    'night': dict(palette=NIGHT_PALETTE, stars=250, clouds=0, celestial='moon'),
+}
+
+
+def new_canvas(w, h, palette, fill=T):
     img = Image.new('P', (w, h), fill)
     flat = []
-    for rgb in PALETTE:
+    for rgb in palette:
         flat.extend(rgb)
     flat.extend([0] * (768 - len(flat)))
     img.putpalette(flat)
@@ -100,170 +191,204 @@ def write_json(name, content):
 
 
 # ----------------------------------------------------------------------------
-# Mascot: 32x32, 11 frames (9 mood-zone expressions + 2 celebrate frames).
-# Frame index = row*3 + col; row 0 = high energy, col 0 = negative valence.
+# Mascot: 11 frames (9 mood-zone expressions + 2 celebrate frames), drawn at
+# scale s (1 -> 32x32, 2 -> 64x64). Frame index = row*3 + col; row 0 = high
+# energy, col 0 = negative valence.
 # ----------------------------------------------------------------------------
 POSE_PERK, POSE_NORMAL, POSE_SQUASH = 1, 0, -1
 
 
-def draw_body(d, pose):
-    """Round mint blob with ear nubs; posture varies with energy."""
+def draw_body(d, s, pose, arms=None):
+    """Round mint blob: feet, ears (and arms) peek from behind the body."""
     if pose == POSE_PERK:
-        box, ear_y = (4, 6, 27, 29), 3
+        box, ear_y = (4, 6, 27, 28), 3
     elif pose == POSE_SQUASH:
-        box, ear_y = (2, 11, 29, 29), 8
+        box, ear_y = (2, 11, 29, 28), 8
     else:
-        box, ear_y = (3, 8, 28, 29), 5
-    x0, y0, x1, y1 = box
-    # ear nubs peeking from behind the body
-    for ex in (x0 + 4, x1 - 8):
-        d.ellipse((ex, ear_y, ex + 4, ear_y + 5), fill=BODY, outline=OUT)
-    # body: shade crescent under a mint core, single dark outline
-    d.ellipse(box, fill=SHADE, outline=OUT)
-    d.ellipse((x0 + 1, y0 + 1, x1 - 1, y1 - 3), fill=BODY)
+        box, ear_y = (3, 8, 28, 28), 5
+    x0, y0, x1, y1 = [v * s for v in box]
+
+    # feet nubs
+    for fx in (9, 18):
+        d.ellipse((fx * s, 26 * s, (fx + 5) * s, 30 * s - 1), fill=SHADE, outline=OUT)
+
+    # ears
+    for i, ex in enumerate((x0 + 4 * s, x1 - 8 * s)):
+        d.ellipse((ex, ear_y * s, ex + 4 * s, (ear_y + 5) * s), fill=BODY, outline=OUT)
+        if s > 1:
+            d.ellipse((ex + s + 1, (ear_y + 1) * s + 1, ex + 3 * s - 1, (ear_y + 3) * s),
+                      fill=EARIN)
+
+    # celebrate arms, raised
+    if arms == 'up':
+        d.ellipse((0, (y0 // s + 4) * s, 4 * s, (y0 // s + 11) * s), fill=BODY, outline=OUT)
+        d.ellipse((32 * s - 4 * s - 1, (y0 // s + 4) * s, 32 * s - 1, (y0 // s + 11) * s),
+                  fill=BODY, outline=OUT)
+
+    # body: deep rim -> shade -> core, one dark outline
+    d.ellipse((x0, y0, x1, y1), fill=DEEP, outline=OUT)
+    d.ellipse((x0 + s, y0 + s, x1 - s, y1 - 2 * s), fill=SHADE)
+    d.ellipse((x0 + s, y0 + s, x1 - s, y1 - 4 * s), fill=BODY)
+
     # top-left highlight
-    d.ellipse((x0 + 4, y0 + 3, x0 + 8, y0 + 6), fill=LIGHT)
+    d.ellipse((x0 + 4 * s, y0 + 3 * s, x0 + 9 * s, y0 + 6 * s), fill=LIGHT)
+    if s > 1:
+        d.ellipse((x0 + 11 * s, y0 + 2 * s, x0 + 14 * s, y0 + 3 * s + 1), fill=LIGHT)
 
 
 def face_y(pose):
     return {POSE_PERK: 16, POSE_NORMAL: 17, POSE_SQUASH: 19}[pose]
 
 
-def draw_eye(d, cx, ey, style):
+def draw_eye(d, s, cx, ey, style):
+    cx *= s
+    ey *= s
     if style == 'dot':
-        d.rectangle((cx - 1, ey - 1, cx, ey + 1), fill=PUPIL)
+        d.ellipse((cx - s, ey - s, cx + s, ey + 2 * s - 1), fill=PUPIL)
+        if s > 1:
+            d.point((cx - 1, ey - 1), fill=WHITE)
     elif style == 'wide':
-        d.ellipse((cx - 2, ey - 2, cx + 1, ey + 2), fill=WHITE)
-        d.rectangle((cx - 1, ey, cx, ey + 1), fill=PUPIL)
-    elif style == 'happy':   # ^ shaped
-        d.line((cx - 2, ey + 1, cx, ey - 1), fill=PUPIL)
-        d.line((cx, ey - 1, cx + 2, ey + 1), fill=PUPIL)
-    elif style == 'sadclosed':   # v shaped (downcast closed lid)
-        d.line((cx - 2, ey - 1, cx, ey + 1), fill=PUPIL)
-        d.line((cx, ey + 1, cx + 2, ey - 1), fill=PUPIL)
-    elif style == 'flat':    # sleepy = =
-        d.line((cx - 2, ey, cx + 2, ey), fill=PUPIL)
-        d.line((cx - 2, ey + 2, cx + 2, ey + 2), fill=PUPIL)
+        d.ellipse((cx - 2 * s, ey - 2 * s, cx + 2 * s - 1, ey + 3 * s - 1), fill=WHITE)
+        d.ellipse((cx - s, ey, cx + s - 1, ey + 2 * s - 1), fill=PUPIL)
+        if s > 1:
+            d.point((cx - s, ey + 1), fill=WHITE)
+    elif style == 'happy':       # ^
+        d.line((cx - 2 * s, ey + s, cx, ey - s), fill=PUPIL, width=s)
+        d.line((cx, ey - s, cx + 2 * s, ey + s), fill=PUPIL, width=s)
+    elif style == 'sadclosed':   # downcast closed lid (∩ curve)
+        d.arc((cx - 2 * s, ey - s, cx + 2 * s, ey + 2 * s), 180, 360, fill=PUPIL, width=s)
+    elif style == 'flat':        # sleepy = =
+        d.line((cx - 2 * s, ey, cx + 2 * s, ey), fill=PUPIL, width=s)
+        d.line((cx - 2 * s, ey + 2 * s, cx + 2 * s, ey + 2 * s), fill=PUPIL, width=s)
     elif style == 'sparkle':
-        d.line((cx - 2, ey, cx + 2, ey), fill=SPARK)
-        d.line((cx, ey - 2, cx, ey + 2), fill=SPARK)
-        d.point((cx, ey), fill=WHITE)
+        d.line((cx - 2 * s, ey, cx + 2 * s, ey), fill=SPARK, width=s)
+        d.line((cx, ey - 2 * s, cx, ey + 2 * s), fill=SPARK, width=s)
+        if s > 1:
+            d.point((cx - s - 1, ey - s - 1), fill=SPARK)
+            d.point((cx + s, ey - s - 1), fill=SPARK)
+            d.point((cx - s - 1, ey + s), fill=SPARK)
+            d.point((cx + s, ey + s), fill=SPARK)
+        d.rectangle((cx - 1, ey - 1, cx, ey), fill=WHITE)
     elif style == 'droop':
-        d.rectangle((cx - 1, ey, cx, ey + 1), fill=PUPIL)
-        d.line((cx - 2, ey - 2, cx + 2, ey - 2), fill=PUPIL)
-    elif style == 'uu':      # relaxed closed u u
-        d.line((cx - 2, ey - 1, cx - 2, ey), fill=PUPIL)
-        d.line((cx + 2, ey - 1, cx + 2, ey), fill=PUPIL)
-        d.line((cx - 1, ey + 1, cx + 1, ey + 1), fill=PUPIL)
+        d.ellipse((cx - s, ey, cx + s - 1, ey + 2 * s - 1), fill=PUPIL)
+        d.line((cx - 2 * s, ey - 2 * s, cx + 2 * s, ey - 2 * s), fill=PUPIL, width=s)
+    elif style == 'uu':          # relaxed closed u u
+        d.arc((cx - 2 * s, ey - 2 * s, cx + 2 * s, ey + s), 0, 180, fill=PUPIL, width=s)
 
 
-def draw_brows(d, fy, style):
-    ley, rey = fy - 5, fy - 5
+def draw_brows(d, s, fy, style):
+    # Sit well above the eyes (which span up to ey-2 = fy-3) so they never
+    # merge into them and read as a second pair of eyes.
+    y = (fy - 7) * s
     if style == 'angry':     # inner tips down
-        d.line((9, ley, 13, ley + 2), fill=PUPIL)
-        d.line((19, rey + 2, 23, rey), fill=PUPIL)
+        d.line((10 * s, y, 13 * s, y + s), fill=PUPIL, width=s)
+        d.line((19 * s, y + s, 22 * s, y), fill=PUPIL, width=s)
     elif style == 'worry':   # inner tips up
-        d.line((9, ley + 2, 13, ley), fill=PUPIL)
-        d.line((19, rey, 23, rey + 2), fill=PUPIL)
+        d.line((10 * s, y + s, 13 * s, y), fill=PUPIL, width=s)
+        d.line((19 * s, y, 22 * s, y + s), fill=PUPIL, width=s)
 
 
-def draw_mouth(d, fy, style):
-    mx, my = 16, fy + 5
+def draw_mouth(d, s, fy, style):
+    mx, my = 16 * s, (fy + 5) * s
     if style == 'smile':
-        d.arc((mx - 3, my - 3, mx + 3, my + 1), 20, 160, fill=PUPIL)
+        d.arc((mx - 3 * s, my - 3 * s, mx + 3 * s, my + s), 20, 160, fill=PUPIL, width=s)
     elif style == 'open':
-        d.pieslice((mx - 3, my - 3, mx + 3, my + 2), 0, 180, fill=MOUTH)
-        d.arc((mx - 3, my - 3, mx + 3, my + 2), 0, 180, fill=PUPIL)
+        d.pieslice((mx - 3 * s, my - 3 * s, mx + 3 * s, my + 2 * s), 0, 180, fill=MOUTH)
+        d.arc((mx - 3 * s, my - 3 * s, mx + 3 * s, my + 2 * s), 0, 180, fill=PUPIL, width=s)
+        if s > 1:
+            d.pieslice((mx - s - 1, my, mx + s + 1, my + 2 * s + 1), 180, 360, fill=TONGUE)
     elif style == 'grin':
-        d.pieslice((mx - 4, my - 4, mx + 4, my + 2), 0, 180, fill=MOUTH)
-        d.arc((mx - 4, my - 4, mx + 4, my + 2), 0, 180, fill=PUPIL)
-        d.line((mx - 2, my - 1, mx + 2, my - 1), fill=WHITE)
+        d.pieslice((mx - 4 * s, my - 4 * s, mx + 4 * s, my + 2 * s), 0, 180, fill=MOUTH)
+        d.arc((mx - 4 * s, my - 4 * s, mx + 4 * s, my + 2 * s), 0, 180, fill=PUPIL, width=s)
+        d.line((mx - 2 * s, my - s, mx + 2 * s, my - s), fill=WHITE, width=s)
+        if s > 1:
+            d.pieslice((mx - 2 * s, my, mx + 2 * s, my + 2 * s + 2), 180, 360, fill=TONGUE)
     elif style == 'flat':
-        d.line((mx - 2, my, mx + 2, my), fill=PUPIL)
+        d.line((mx - 2 * s, my, mx + 2 * s, my), fill=PUPIL, width=s)
     elif style == 'frown':
-        d.arc((mx - 3, my, mx + 3, my + 4), 200, 340, fill=PUPIL)
+        d.arc((mx - 3 * s, my, mx + 3 * s, my + 4 * s), 200, 340, fill=PUPIL, width=s)
     elif style == 'wobble':
         for i, dy in enumerate((0, 1, 0, 1, 0, 1)):
-            d.point((mx - 3 + i, my + dy), fill=PUPIL)
+            d.rectangle(((mx - 3 * s) + i * s, my + dy * s,
+                         (mx - 3 * s) + (i + 1) * s - 1, my + (dy + 1) * s - 1), fill=PUPIL)
     elif style == 'o':
-        d.ellipse((mx - 1, my - 1, mx + 1, my + 1), outline=PUPIL)
+        d.ellipse((mx - s, my - s, mx + s, my + s), outline=PUPIL, width=s)
 
 
-def draw_extra(d, fy, extra):
+def draw_extra(d, s, fy, extra):
     if extra == 'blush':
-        d.rectangle((7, fy + 2, 8, fy + 2), fill=BLUSH)
-        d.rectangle((23, fy + 2, 24, fy + 2), fill=BLUSH)
+        d.ellipse((6 * s, (fy + 2) * s, 9 * s, (fy + 3) * s), fill=BLUSH)
+        d.ellipse((23 * s, (fy + 2) * s, 26 * s, (fy + 3) * s), fill=BLUSH)
     elif extra == 'sweat':
-        d.point((26, fy - 7), fill=TEAR)
-        d.rectangle((25, fy - 6, 26, fy - 5), fill=TEAR)
+        d.point((26 * s, (fy - 7) * s), fill=TEAR)
+        d.ellipse((25 * s, (fy - 6) * s, 26 * s + s - 1, (fy - 5) * s + s - 1), fill=TEAR)
     elif extra == 'tear':
-        d.point((10, fy + 2), fill=TEAR)
-        d.rectangle((10, fy + 3, 11, fy + 4), fill=TEAR)
+        d.point((10 * s, (fy + 2) * s), fill=TEAR)
+        d.ellipse((10 * s, (fy + 3) * s, 11 * s + s - 1, (fy + 4) * s + s - 1), fill=TEAR)
     elif extra == 'zzz':
-        # big Z
-        d.line((23, 2, 26, 2), fill=LAV)
-        d.line((26, 2, 23, 5), fill=LAV)
-        d.line((23, 5, 26, 5), fill=LAV)
-        # small z
-        d.line((28, 6, 30, 6), fill=LAV)
-        d.point((29, 7), fill=LAV)
-        d.line((28, 8, 30, 8), fill=LAV)
+        d.line((23 * s, 2 * s, 26 * s, 2 * s), fill=LAV, width=s)
+        d.line((26 * s, 2 * s, 23 * s, 5 * s), fill=LAV, width=s)
+        d.line((23 * s, 5 * s, 26 * s, 5 * s), fill=LAV, width=s)
+        d.line((28 * s, 6 * s, 30 * s, 6 * s), fill=LAV)
+        d.point((29 * s, 7 * s), fill=LAV)
+        d.line((28 * s, 8 * s, 30 * s, 8 * s), fill=LAV)
     elif extra == 'spark':
         for sx, sy in ((5, 5), (27, 3)):
-            d.line((sx - 1, sy, sx + 1, sy), fill=SPARK)
-            d.line((sx, sy - 1, sx, sy + 1), fill=SPARK)
+            d.line(((sx - 1) * s, sy * s, (sx + 1) * s, sy * s), fill=SPARK, width=s)
+            d.line((sx * s, (sy - 1) * s, sx * s, (sy + 1) * s), fill=SPARK, width=s)
 
 
-# (pose, eyes, brows, mouth, extras) — index = row*3+col
+# (pose, eyes, brows, mouth, extras, arms) — index = row*3+col
 EXPRESSIONS = [
-    (POSE_PERK,   'wide',      'angry', 'wobble', ('sweat',)),          # 0 STRESSED
-    (POSE_PERK,   'wide',      None,    'o',      ('spark',)),          # 1 WIRED
-    (POSE_PERK,   'sparkle',   None,    'grin',   ('blush', 'spark')),  # 2 PUMPED
-    (POSE_NORMAL, 'droop',     'worry', 'frown',  ()),                  # 3 DOWN
-    (POSE_NORMAL, 'dot',       None,    'flat',   ()),                  # 4 OKAY
-    (POSE_NORMAL, 'happy',     None,    'smile',  ('blush',)),          # 5 HAPPY
-    (POSE_SQUASH, 'sadclosed', 'worry', 'wobble', ('tear',)),           # 6 DRAINED
-    (POSE_SQUASH, 'flat',      None,    'o',      ('zzz',)),            # 7 SLEEPY
-    (POSE_SQUASH, 'uu',        None,    'smile',  ('blush',)),          # 8 COZY
-    (POSE_PERK,   'happy',     None,    'grin',   ('blush', 'spark')),  # 9 YAY (up)
-    (POSE_SQUASH, 'sparkle',   None,    'grin',   ('blush',)),          # 10 YAY (down)
+    (POSE_PERK,   'wide',      'angry', 'wobble', ('sweat',), None),           # 0 STRESSED
+    (POSE_PERK,   'wide',      None,    'o',      ('spark',), None),           # 1 WIRED
+    (POSE_PERK,   'sparkle',   None,    'grin',   ('blush', 'spark'), None),   # 2 PUMPED
+    (POSE_NORMAL, 'droop',     'worry', 'frown',  (), None),                   # 3 DOWN
+    (POSE_NORMAL, 'dot',       None,    'flat',   (), None),                   # 4 OKAY
+    (POSE_NORMAL, 'happy',     None,    'smile',  ('blush',), None),           # 5 HAPPY
+    (POSE_SQUASH, 'sadclosed', 'worry', 'wobble', ('tear',), None),            # 6 DRAINED
+    (POSE_SQUASH, 'flat',      None,    'o',      ('zzz',), None),             # 7 SLEEPY
+    (POSE_SQUASH, 'uu',        None,    'smile',  ('blush',), None),           # 8 COZY
+    (POSE_PERK,   'happy',     None,    'grin',   ('blush', 'spark'), 'up'),   # 9 YAY (up)
+    (POSE_SQUASH, 'sparkle',   None,    'grin',   ('blush',), 'up'),           # 10 YAY (down)
 ]
 
 
-def gen_mascot():
-    frames = len(EXPRESSIONS)
-    sheet = new_canvas(32, 32 * frames)
-    for i, (pose, eyes, brows, mouth, extras) in enumerate(EXPRESSIONS):
-        frame = new_canvas(32, 32)
+def gen_mascot(s, name):
+    size = 32 * s
+    sheet = new_canvas(size, size * len(EXPRESSIONS), SPRITE_PALETTE)
+    for i, (pose, eyes, brows, mouth, extras, arms) in enumerate(EXPRESSIONS):
+        frame = new_canvas(size, size, SPRITE_PALETTE)
         d = ImageDraw.Draw(frame)
-        draw_body(d, pose)
+        draw_body(d, s, pose, arms)
         fy = face_y(pose)
-        draw_eye(d, 11, fy - 1, eyes)
-        draw_eye(d, 21, fy - 1, eyes)
+        draw_eye(d, s, 11, fy - 1, eyes)
+        draw_eye(d, s, 21, fy - 1, eyes)
         if brows:
-            draw_brows(d, fy, brows)
-        draw_mouth(d, fy, mouth)
+            draw_brows(d, s, fy, brows)
+        draw_mouth(d, s, fy, mouth)
         for extra in extras:
-            draw_extra(d, fy, extra)
-        sheet.paste(frame, (0, i * 32))
-    save_bmp(sheet, 'mascot')
-    write_json('mascot', '{\n    "type": "sprite",\n    "height": 32\n}')
+            draw_extra(d, s, fy, extra)
+        sheet.paste(frame, (0, i * size))
+    save_bmp(sheet, name)
+    write_json(name, '{\n    "type": "sprite",\n    "height": %d\n}' % size)
     return sheet
 
 
 # ----------------------------------------------------------------------------
-# Cursor ring: 16x16, 2 frames (pulse)
+# Cursor: 16x16, 2 frames — corner brackets + center dot, pulsing
 # ----------------------------------------------------------------------------
 def gen_cursor():
-    sheet = new_canvas(16, 32)
-    for i, r in enumerate((5, 6)):
-        frame = new_canvas(16, 16)
+    sheet = new_canvas(16, 32, SPRITE_PALETTE)
+    for i, r in enumerate((5, 7)):
+        frame = new_canvas(16, 16, SPRITE_PALETTE)
         d = ImageDraw.Draw(frame)
-        d.ellipse((8 - r, 8 - r, 7 + r, 7 + r), outline=WHITE)
-        t = r + 2
-        for dx, dy in ((t, 0), (-t, 0), (0, t), (0, -t)):
-            d.point((8 + dx - (1 if dx > 0 else 0), 8 + dy - (1 if dy > 0 else 0)),
-                    fill=SPARK)
+        for sx in (-1, 1):
+            for sy in (-1, 1):
+                cx, cy = 8 + sx * r - (1 if sx > 0 else 0), 8 + sy * r - (1 if sy > 0 else 0)
+                d.line((cx, cy, cx - sx * 2, cy), fill=WHITE)
+                d.line((cx, cy, cx, cy - sy * 2), fill=WHITE)
+        d.rectangle((7, 7, 8, 8), fill=SPARK)
         sheet.paste(frame, (0, i * 16))
     save_bmp(sheet, 'cursor')
     write_json('cursor', '{\n    "type": "sprite",\n    "height": 16\n}')
@@ -274,33 +399,36 @@ def gen_cursor():
 # Focus icons: 16x16, 5 frames (locked-in ... lost)
 # ----------------------------------------------------------------------------
 def gen_focus_icons():
-    sheet = new_canvas(16, 80)
+    sheet = new_canvas(16, 80, SPRITE_PALETTE)
     for i in range(5):
-        frame = new_canvas(16, 16)
+        frame = new_canvas(16, 16, SPRITE_PALETTE)
         d = ImageDraw.Draw(frame)
-        if i == 0:    # LOCKED IN: bullseye
-            d.ellipse((2, 2, 13, 13), outline=SPARK)
-            d.ellipse((5, 5, 10, 10), outline=WHITE)
-            d.rectangle((7, 7, 8, 8), fill=SPARK)
+        if i == 0:    # LOCKED IN: amber bullseye
+            d.ellipse((1, 1, 14, 14), outline=AMBER)
+            d.ellipse((4, 4, 11, 11), outline=WHITE)
+            d.ellipse((6, 6, 9, 9), fill=AMBER, outline=SPARK)
         elif i == 1:  # STEADY: ring + dot
-            d.ellipse((3, 3, 12, 12), outline=WHITE)
-            d.rectangle((7, 7, 8, 8), fill=WHITE)
-        elif i == 2:  # SO-SO: wavy line
-            for x in range(3, 13):
-                y = 8 + (1 if (x // 2) % 2 else -1)
+            d.ellipse((2, 2, 13, 13), outline=WHITE)
+            d.ellipse((6, 6, 9, 9), fill=WHITE)
+        elif i == 2:  # SO-SO: gentle wave
+            for x in range(2, 14):
+                y = 8 + round(1.5 * math.sin((x - 2) * math.pi / 5))
                 d.point((x, y), fill=WHITE)
-        elif i == 3:  # SCATTERED: stray dots
-            for x, y in ((4, 4), (11, 3), (13, 9), (6, 11), (9, 7), (3, 8)):
-                d.rectangle((x, y, x + 1, y + 1), fill=WHITE)
-        else:         # LOST: spiral
+                d.point((x, y + 1), fill=LAV)
+        elif i == 3:  # SCATTERED: dots drifting apart
+            for x, y, c in ((4, 4, WHITE), (11, 3, LAV), (13, 9, WHITE),
+                            (5, 11, LAV), (9, 7, WHITE), (2, 8, LAV)):
+                d.rectangle((x, y, x + 1, y + 1), fill=c)
+        else:         # LOST: spiral fading out
             cx, cy = 8, 8
-            for t in range(40):
-                ang = t * 0.45
-                r = 1.0 + t * 0.14
+            for t in range(34):
+                ang = t * 0.42
+                r = 1.2 + t * 0.16
                 x = int(round(cx + r * math.cos(ang)))
                 y = int(round(cy + r * math.sin(ang)))
                 if 0 <= x < 16 and 0 <= y < 16:
-                    d.point((x, y), fill=LAV)
+                    d.point((x, y), fill=LAV if t < 22 else B_DOT and LAV)
+            d.point((8, 8), fill=WHITE)
         sheet.paste(frame, (0, i * 16))
     save_bmp(sheet, 'focus_icons')
     write_json('focus_icons', '{\n    "type": "sprite",\n    "height": 16\n}')
@@ -308,67 +436,186 @@ def gen_focus_icons():
 
 
 # ----------------------------------------------------------------------------
-# Dot sprite for the stats sparkline: 8x8, 2 frames (bright point, dim tick)
+# Sparkline dots: 8x8, 3 frames (positive point, baseline tick, negative point)
 # ----------------------------------------------------------------------------
 def gen_dot():
-    sheet = new_canvas(8, 16)
+    sheet = new_canvas(8, 24, SPRITE_PALETTE)
     d = ImageDraw.Draw(sheet)
-    d.rectangle((3, 3, 4, 4), fill=SPARK)      # frame 0: data point
-    d.point((3, 8 + 3), fill=STAR)             # frame 1: baseline tick
-    d.point((4, 8 + 3), fill=STAR)
+    d.rectangle((3, 3, 4, 4), fill=SPARK)        # frame 0: positive
+    d.point((3, 8 + 3), fill=LAV)                # frame 1: baseline tick
+    d.point((4, 8 + 3), fill=LAV)
+    d.rectangle((3, 16 + 3, 4, 16 + 4), fill=TEAR)   # frame 2: negative
     save_bmp(sheet, 'dot')
     write_json('dot', '{\n    "type": "sprite",\n    "height": 8\n}')
     return sheet
 
 
 # ----------------------------------------------------------------------------
-# Backgrounds: 256x256 starfield, and a variant with the mood-pad frame
+# Backgrounds: 256x256. Dithered night-sky gradient; home gets a moon and
+# rolling hills, the pad gets a polished frame. Visible area = rows 48..208.
 # ----------------------------------------------------------------------------
-def starfield(d):
-    d.rectangle((0, 0, 255, 255), fill=BASE)
-    seed = 0x1234ABCD
-    for _ in range(260):
+def lcg_stream(seed):
+    while True:
         seed = (seed * 1103515245 + 12345) & 0x7FFFFFFF
-        x = seed % 256
-        seed = (seed * 1103515245 + 12345) & 0x7FFFFFFF
-        y = seed % 256
-        seed = (seed * 1103515245 + 12345) & 0x7FFFFFFF
-        kind = seed % 10
-        if kind < 6:
-            d.point((x, y), fill=DOT)
-        elif kind < 9:
-            d.point((x, y), fill=STAR)
-        else:  # tiny plus star
-            d.point((x, y), fill=ACCENT)
+        yield seed
+
+
+def sky(d):
+    # three bands, checker-dithered over 10-row transitions
+    band_mid_start, band_low_start = 110, 170
+
+    for y in range(256):
+        if y < band_mid_start:
+            d.line((0, y, 255, y), fill=B_TOP)
+        elif y < band_mid_start + 10:
+            for x in range(256):
+                t = (y - band_mid_start) / 10
+                d.point((x, y), fill=B_MID if ((x + y) % 2 == 0) == (t > 0.5) or t > 0.75
+                        else B_TOP)
+        elif y < band_low_start:
+            d.line((0, y, 255, y), fill=B_MID)
+        elif y < band_low_start + 10:
+            for x in range(256):
+                t = (y - band_low_start) / 10
+                d.point((x, y), fill=B_LOW if ((x + y) % 2 == 0) == (t > 0.5) or t > 0.75
+                        else B_MID)
+        else:
+            d.line((0, y, 255, y), fill=B_LOW)
+
+
+def stars(d, rng, count=240, y_max=250):
+    for _ in range(count):
+        x = next(rng) % 256
+        y = next(rng) % y_max
+        kind = next(rng) % 12
+        if kind < 7:
+            d.point((x, y), fill=B_DOT)
+        elif kind < 10:
+            d.point((x, y), fill=B_STAR)
+        elif kind < 11:
+            d.point((x, y), fill=B_BRIGHT)
             for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
-                d.point(((x + dx) % 256, (y + dy) % 256), fill=STAR)
+                d.point(((x + dx) % 256, (y + dy) % 256), fill=B_STAR)
+        else:
+            d.point((x, y), fill=B_WARM)
 
 
-def gen_bg_soft():
-    img = new_canvas(256, 256, BASE)
-    starfield(ImageDraw.Draw(img))
-    save_bmp(img, 'bg_soft')
-    write_json('bg_soft', '{\n    "type": "regular_bg"\n}')
+def moon(d, cx=196, cy=78, r=11):
+    d.ellipse((cx - r, cy - r, cx + r, cy + r), fill=B_MOON)
+    # crescent: bite out with sky color; rim shade along the inner curve
+    d.ellipse((cx - r + 7, cy - r - 3, cx + r + 7, cy + r - 3), fill=B_TOP)
+    d.arc((cx - r, cy - r, cx + r, cy + r), 60, 250, fill=B_MOONSH)
+
+
+def sun(d, cx=196, cy=78, r=11):
+    for ang_deg in range(0, 360, 45):
+        ang = math.radians(ang_deg)
+        x0 = cx + (r + 3) * math.cos(ang)
+        y0 = cy + (r + 3) * math.sin(ang)
+        x1 = cx + (r + 6) * math.cos(ang)
+        y1 = cy + (r + 6) * math.sin(ang)
+        d.line((round(x0), round(y0), round(x1), round(y1)), fill=B_MOONSH)
+    d.ellipse((cx - r, cy - r, cx + r, cy + r), fill=B_MOON, outline=B_MOONSH)
+    d.ellipse((cx - r + 3, cy - r + 3, cx - r + 8, cy - r + 7), fill=B_MARK)
+
+
+def low_sun(d, cx=196, cy=186, r=13):
+    # sits low; the hills drawn afterwards clip its lower half
+    d.ellipse((cx - r, cy - r, cx + r, cy + r), fill=B_MOON, outline=B_MOONSH)
+    for gy, half in ((cy - 2, 20), (cy + 3, 26)):
+        d.line((cx - half - r, gy, cx - r - 2, gy), fill=B_MOONSH)
+        d.line((cx + r + 2, gy, cx + half + r, gy), fill=B_MOONSH)
+
+
+def clouds(d, count):
+    spots = ((66, 86), (168, 108), (118, 62))
+    for cx, cy in spots[:count]:
+        # base puffs
+        for dx, dy, rw, rh in ((0, 0, 14, 6), (-10, 2, 9, 4), (10, 2, 10, 4)):
+            d.ellipse((cx + dx - rw, cy + dy - rh, cx + dx + rw, cy + dy + rh), fill=B_STAR)
+        # lit top and shaded base
+        d.ellipse((cx - 9, cy - 6, cx + 7, cy), fill=B_BRIGHT)
+        d.line((cx - 12, cy + 6, cx + 12, cy + 6), fill=B_DOT)
+
+
+def hills(d, rng):
+    for x in range(256):
+        y1 = 206 - round(7 * math.sin((x + 30) * math.pi / 128))
+        y2 = 214 - round(9 * math.sin((x + 150) * math.pi / 96))
+        top = min(y1, y2)
+        d.line((x, top, x, 255), fill=B_HILL)
+        d.point((x, top), fill=B_HILLRIM)
+        if next(rng) % 37 == 0 and top < 253:
+            d.point((x, top + 2 + next(rng) % 3), fill=B_HILLRIM)
+
+
+def draw_celestial(d, kind):
+    if kind == 'moon':
+        moon(d)
+    elif kind == 'sun':
+        sun(d)
+    else:
+        low_sun(d)
+
+
+def gen_bg_home(theme_name):
+    theme = THEMES[theme_name]
+    img = new_canvas(256, 256, theme['palette'], B_TOP)
+    d = ImageDraw.Draw(img)
+    rng = lcg_stream(0x1234ABCD)
+    sky(d)
+    if theme['stars']:
+        stars(d, rng, count=theme['stars'], y_max=200)
+    if theme['clouds']:
+        clouds(d, theme['clouds'])
+    draw_celestial(d, theme['celestial'])
+    hills(d, rng)
+    name = 'bg_home_' + theme_name
+    save_bmp(img, name)
+    write_json(name, '{\n    "type": "regular_bg"\n}')
     return img
 
 
-def gen_bg_pad():
-    img = new_canvas(256, 256, BASE)
+def gen_bg_pad(theme_name):
+    theme = THEMES[theme_name]
+    img = new_canvas(256, 256, theme['palette'], B_TOP)
     d = ImageDraw.Draw(img)
-    starfield(d)
-    # The GBA screen shows the center 240x160 of this 256x256 map.
-    # Pad play-area: 136x136 rounded frame centered at (128,128).
+    rng = lcg_stream(0xBADC0FFE)
+    sky(d)
+    if theme['stars']:
+        stars(d, rng, count=min(theme['stars'], 230), y_max=250)
+    if theme['clouds']:
+        clouds(d, 1)
+
+    # pad frame: 136 half-width play area centered at (128,128)
     x0, y0, x1, y1 = 128 - 68, 128 - 68, 128 + 68, 128 + 68
-    d.rounded_rectangle((x0, y0, x1, y1), radius=8, outline=ACCENT)
-    d.rounded_rectangle((x0 - 1, y0 - 1, x1 + 1, y1 + 1), radius=9, outline=STAR)
-    # dotted center axes
-    for t in range(x0 + 4, x1 - 3, 4):
-        d.point((t, 128), fill=STAR)
-        d.point((128, t), fill=STAR)
-    # center marker
-    d.rectangle((127, 127, 128, 128), fill=LAV)
-    save_bmp(img, 'bg_pad')
-    write_json('bg_pad', '{\n    "type": "regular_bg"\n}')
+    d.rounded_rectangle((x0 - 2, y0 - 2, x1 + 2, y1 + 2), radius=10, outline=B_FRAMEGLOW)
+    d.rounded_rectangle((x0, y0, x1, y1), radius=8, outline=B_FRAME)
+
+    # corner accents
+    for sx in (0, 1):
+        for sy in (0, 1):
+            cx = (x0 + 4) if sx == 0 else (x1 - 4)
+            cy = (y0 + 4) if sy == 0 else (y1 - 4)
+            dx = 1 if sx == 0 else -1
+            dy = 1 if sy == 0 else -1
+            d.line((cx, cy, cx + 3 * dx, cy), fill=B_MARK)
+            d.line((cx, cy, cx, cy + 3 * dy), fill=B_MARK)
+
+    # dotted axes + center marker
+    for t in range(x0 + 6, x1 - 5, 4):
+        d.point((t, 128), fill=B_AXIS)
+        d.point((128, t), fill=B_AXIS)
+    d.rectangle((126, 126, 129, 129), outline=B_MARK)
+
+    # axis end chevrons (up/down/left/right hints)
+    for ex, ey, dx, dy in ((128, y0 - 6, 0, -1), (128, y1 + 6, 0, 1),
+                           (x0 - 6, 128, -1, 0), (x1 + 6, 128, 1, 0)):
+        d.line((ex - 2 * abs(dy), ey - 2 * abs(dx), ex + dx * 2, ey + dy * 2), fill=B_BRIGHT)
+        d.line((ex + 2 * abs(dy), ey + 2 * abs(dx), ex + dx * 2, ey + dy * 2), fill=B_BRIGHT)
+    name = 'bg_pad_' + theme_name
+    save_bmp(img, name)
+    write_json(name, '{\n    "type": "regular_bg"\n}')
     return img
 
 
@@ -389,7 +636,7 @@ def square_note(freq, ms, volume=52):
     period = 22050 / freq
     out = []
     for i in range(n):
-        env = 1.0 - i / n            # linear decay
+        env = 1.0 - i / n
         v = int(volume * env)
         phase = (i % period) / period
         out.append(128 + v if phase < 0.5 else 128 - v)
@@ -408,8 +655,7 @@ def gen_audio():
 # ----------------------------------------------------------------------------
 # Preview sheets (PNG, upscaled) for human inspection
 # ----------------------------------------------------------------------------
-def preview(sheets):
-    scale = 5
+def preview(sheets, path, scale=4):
     cols = sum(s.width for s in sheets) + 8 * (len(sheets) + 1)
     rows = max(s.height for s in sheets) + 16
     canvas = Image.new('RGB', (cols, rows), (24, 18, 34))
@@ -417,10 +663,8 @@ def preview(sheets):
     for s in sheets:
         canvas.paste(s.convert('RGB'), (x, 8))
         x += s.width + 8
-    canvas = canvas.resize((canvas.width * scale, canvas.height * scale),
-                           Image.NEAREST)
+    canvas = canvas.resize((canvas.width * scale, canvas.height * scale), Image.NEAREST)
     os.makedirs(PREVIEW_DIR, exist_ok=True)
-    path = os.path.join(PREVIEW_DIR, 'asset_preview.png')
     canvas.save(path)
     print('preview:', path)
 
@@ -428,18 +672,23 @@ def preview(sheets):
 def main():
     os.makedirs(GFX, exist_ok=True)
     os.makedirs(AUDIO, exist_ok=True)
-    sheets = [gen_mascot(), gen_cursor(), gen_focus_icons(), gen_dot()]
-    bgs = [gen_bg_soft(), gen_bg_pad()]
+    small = gen_mascot(1, 'mascot')
+    big = gen_mascot(2, 'mascot_big')
+    sheets = [big, small, gen_cursor(), gen_focus_icons(), gen_dot()]
+    bgs = []
+    for theme_name in ('day', 'dusk', 'night'):
+        bgs.append(gen_bg_home(theme_name))
+        bgs.append(gen_bg_pad(theme_name))
     gen_audio()
-    preview(sheets)
-    # separate preview of bg centers (visible 240x160 screen area)
+    preview(sheets, os.path.join(PREVIEW_DIR, 'asset_preview.png'), scale=4)
+
+    # bg preview: the visible 240x160 screen area of each bg (2 per theme row)
     scale = 2
-    canvas = Image.new('RGB', ((240 + 8) * 2 + 8, 160 + 16), (0, 0, 0))
+    canvas = Image.new('RGB', ((240 + 8) * 2 + 8, (160 + 8) * 3 + 8), (0, 0, 0))
     for i, bg in enumerate(bgs):
         crop = bg.convert('RGB').crop((8, 48, 248, 208))
-        canvas.paste(crop, (8 + i * 248, 8))
-    canvas = canvas.resize((canvas.width * scale, canvas.height * scale),
-                           Image.NEAREST)
+        canvas.paste(crop, (8 + (i % 2) * 248, 8 + (i // 2) * 168))
+    canvas = canvas.resize((canvas.width * scale, canvas.height * scale), Image.NEAREST)
     canvas.save(os.path.join(PREVIEW_DIR, 'bg_preview.png'))
     print('done')
 

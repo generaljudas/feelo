@@ -8,10 +8,9 @@
 #include "bn_string.h"
 #include "bn_vector.h"
 
-#include "bn_regular_bg_items_bg_soft.h"
 #include "bn_sprite_items_dot.h"
-#include "bn_sprite_items_mascot.h"
 
+#include "fl_bg.h"
 #include "fl_insights.h"
 #include "fl_storage.h"
 
@@ -29,7 +28,7 @@ namespace
 
 scene_id scene_stats(context& ctx)
 {
-    bn::regular_bg_ptr bg = bn::regular_bg_items::bg_soft.create_bg(0, 0);
+    bn::regular_bg_ptr backdrop = bg::create_soft();
 
     bn::vector<bn::sprite_ptr, 16> title_sprites;
     ctx.big_text->set_center_alignment();
@@ -122,7 +121,9 @@ scene_id scene_stats(context& ctx)
         {
             check_in record = storage::get(points - 1 - i);
             int dy = -record.valence * 22 / 100;
-            spark_sprites.push_back(bn::sprite_items::dot.create_sprite(-96 + i * 6, base_y + dy, 0));
+            int dot_frame = record.valence < 0 ? 2 : 0;
+            spark_sprites.push_back(
+                    bn::sprite_items::dot.create_sprite(-96 + i * 6, base_y + dy, dot_frame));
         }
     }
 
