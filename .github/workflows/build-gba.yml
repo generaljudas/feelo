@@ -1,0 +1,45 @@
+name: Build GBA ROM
+
+on:
+  push:
+    branches: [claude/gba-file-generation-ivj43d]
+    paths-ignore: ['feelo.gba']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: devkitpro/devkitarm:latest
+    steps:
+      - name: Ensure prerequisites
+        run: |
+          command -v git && command -v python3 || {
+            apt-get update && apt-get install -y git python3
+          }
+          dkp-pacman -S --needed --noconfirm gba-dev || true
+
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Build ROM
+        run: make -j"$(nproc)"
+        env:
+          DEVKITARM: /opt/devkitpro/devkitARM
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: feelo-gba
+          path: feelo.gba
+
+      - name: Commit ROM back to branch
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -f feelo.gba
+          git commit -m "Add built feelo.gba ROM [skip ci]"
+          git push origin HEAD:claude/gba-file-generation-ivj43d
